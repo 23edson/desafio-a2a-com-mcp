@@ -1,6 +1,16 @@
 .env
+.env.*
+*.secret
+*.key
 .venv/
+venv/
 __pycache__/
-node_modules/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
 dist/
+node_modules/
 *.log
+*.tmp
+*.pid

@@ -1,0 +1,18 @@
+[project]
+name = "servidor-mcp"
+version = "1.0.0"
+description = "Servidor MCP Streamable HTTP (2026-07-28) para o desafio A Ponte (Hill Valley Tech)"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp==2.3.0",
+    "mcp-types==2.3.0",
+    "pydantic==2.14.2",
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+    "anyio==4.15.1",
+    "cryptography==50.0.2",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

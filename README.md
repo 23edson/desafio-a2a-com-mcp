@@ -13,7 +13,7 @@ Implementação da ponte entre o protocolo **A2A v1.0** (`SendMessage` / `GetTas
 
 ### Criação do ambiente virtual e instalação com versões travadas
 
-Na raiz do repositório (`desafio-a2a-com-mcp/`), crie um ambiente virtual limpo e instale as dependências com versões travadas (`mcp==2.3.0` em ambos os processos):
+Crie um ambiente virtual limpo e instale as dependências com versões travadas (`mcp==2.3.0` em ambos os processos):
 
 ```bash
 python3 -m venv .venv
@@ -28,7 +28,7 @@ Gere uma chave hexadecimal criptograficamente segura de 32 bytes (64 caracteres 
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Exporte o valor gerado na variável de ambiente `REQUEST_STATE_SECRET` no terminal do servidor MCP (não utilize valores de exemplo fixos):
+Exporte o valor gerado na variável de ambiente `REQUEST_STATE_SECRET` (não utilize valores de exemplo fixos):
 
 ```bash
 export REQUEST_STATE_SECRET="<cole-aqui-os-64-caracteres-hex-gerados>"
@@ -41,7 +41,6 @@ Os comandos abaixo utilizam explicitamente o interpretador Python do ambiente vi
 **Terminal 1 — Servidor MCP (porta padrão `7301`, endpoint `/mcp`):**
 
 ```bash
-export REQUEST_STATE_SECRET="<mesmo-segredo-de-64-caracteres-hex>"
 export MCP_PORT=7301
 .venv/bin/python servidor-mcp/main.py
 ```
@@ -54,26 +53,11 @@ export MCP_URL="http://localhost:7301/mcp"
 .venv/bin/python agente/main.py
 ```
 
-### Configuração de portas (`MCP_PORT`, `A2A_PORT`, `PORT` e `MCP_URL`)
+### Configuração de portas (`MCP_PORT`, `A2A_PORT` e `MCP_URL`)
 
 - **Portas padrão:** o servidor MCP escuta por padrão na porta **`7301`** (`resolver_porta_mcp()`) e o agente A2A escuta por padrão na porta **`7300`** (`resolver_porta_a2a()`).
-- **Precedência e fallback determinístico:** variáveis específicas (`MCP_PORT` e `A2A_PORT`) sempre têm precedência sobre a variável genérica `PORT`, que nunca é aplicada simultaneamente aos dois processos:
-  1. `MCP_PORT` sempre determina a porta do servidor MCP quando definida.
-  2. `A2A_PORT` sempre determina a porta do agente A2A quando definida.
-  3. Quando somente `PORT` está definida, ela atua como fallback do servidor MCP e o agente A2A permanece em `7300`.
-  4. Quando `MCP_PORT` está definida e `A2A_PORT` não está, `PORT` atua como fallback do agente A2A.
-  5. Quando `A2A_PORT` está definida e `MCP_PORT` não está, `PORT` atua como fallback do servidor MCP.
-
-| Configuração | Porta MCP | Porta A2A | URL padrão no `ClienteMCP` |
-|---|---:|---:|---|
-| Nenhuma variável definida | `7301` | `7300` | `http://localhost:7301/mcp` |
-| Somente `PORT=9000` | `9000` | `7300` | `http://localhost:9000/mcp` |
-| `MCP_PORT=7301`, `PORT=9000` | `7301` | `9000` | `http://localhost:7301/mcp` |
-| `A2A_PORT=7300`, `PORT=9000` | `9000` | `7300` | `http://localhost:9000/mcp` |
-| `MCP_PORT=7301`, `A2A_PORT=7300`, `PORT=9000` | `7301` | `7300` | `http://localhost:7301/mcp` |
-| `MCP_PORT=9000`, `A2A_PORT=9000` | Colisão (erro) | Colisão (erro) | — |
-
-- **Endereço do servidor MCP (`MCP_URL`):** quando `MCP_URL` não é definida, `ClienteMCP` utiliza automaticamente `http://localhost:<porta_mcp>/mcp` com a mesma porta resolvida para o servidor MCP. `MCP_URL` pode sobrescrever esse endereço para apontar tanto para outra porta local quanto para um servidor MCP remoto (ex.: `https://outro-servidor.example:7300/mcp`).
+- Caso deseje alterar, use `MCP_PORT` e `A2A_PORT` com valores distintos (`1–65535`). A variável genérica `PORT` funciona como fallback determinístico.
+- **Endereço do servidor MCP (`MCP_URL`):** quando `MCP_URL` não é definida, o agente utiliza automaticamente `http://localhost:<porta_mcp>/mcp`. Pode ser customizada para apontar para outro host/porta se necessário.
 
 ### Execução do validador oficial
 
@@ -85,6 +69,7 @@ python3 validador/validar.py --agente http://localhost:7300 --mcp http://localho
 
 ### Notas para o avaliador
 
+- **Reinicialização antes dos testes manuais:** como o validador oficial (`validar.py`) cria reservas em memória no dia `2026-11-03`, **reinicie ambos os processos antes de executar as verificações manuais** (passos 7 a 13 do fluxo do avaliador), garantindo que a sala `sala-garagem` conflite às 14:00 e ofereça as alternativas esperadas (`sala-fusca` e `sala-mirante`).
 - **Chamadas diretas ao MCP com curl:** enviar obrigatoriamente os headers:
   - `MCP-Protocol-Version`
   - `Mcp-Method`
@@ -99,18 +84,26 @@ python3 validador/validar.py --agente http://localhost:7300 --mcp http://localho
 
 ## 2. Onde a ponte acontece
 
-Quando o cliente A2A envia um pedido de reserva via `SendMessage`, o método `GerenciadorTasksA2A.processar_send_message` em `agente/main.py` invoca a ferramenta `reservar_sala` no servidor MCP por meio de `ClienteMCP.chamar_tool` e inspeciona o campo `result.resultType`: se o servidor MCP responder com `resultType: "input_required"`, a função auxiliar `_extrair_dados_input_required` em `agente/main.py` extrai a chave da elicitation em `inputRequests`, a lista ordenada de salas do `requestedSchema` (`enum`/`const`) e o token `requestState`, permitindo que `processar_send_message` converta `input_required` do MCP para o estado `TASK_STATE_INPUT_REQUIRED` da Task A2A (com a mensagem `alternativas: <id1>, <id2>`) e armazene o contexto em `self._contextos_mrtr[task_id]`. Quando o cliente A2A envia um novo `SendMessage` referenciando o `taskId` pausado com `escolha=<sala>` ou `escolha=recusar`, o método `GerenciadorTasksA2A._processar_continuacao_mrtr` em `agente/main.py` recupera o contexto daquela Task e executa uma nova requisição `tools/call` em `ClienteMCP.chamar_tool` com um **ID JSON-RPC novo**, enviando `inputResponses` e devolvendo o `requestState` ao servidor MCP; durante todo esse ciclo, o `requestState` é estritamente opaco para o agente, sendo apenas armazenado em memória privada e ecoado de volta ao servidor MCP sem nenhuma leitura, interpretação ou modificação de seu conteúdo.
+A ponte entre o ciclo de vida de tarefas do A2A e a resolução de elicitation do MCP (MRTR) ocorre em dois pontos principais:
+
+1. **Conversão de `input_required` em `TASK_STATE_INPUT_REQUIRED` (Pausa):**
+   - No arquivo `agente/main.py` (linhas 678–690), dentro de `GerenciadorTasksA2A.processar_send_message`, o agente chama `ClienteMCP.chamar_tool("reservar_sala", ...)`. Quando o servidor MCP retorna `result.resultType == "input_required"`, a função auxiliar `_extrair_dados_input_required` extrai a chave da elicitation em `inputRequests`, o `enum`/`const` das salas no `requestedSchema` e o token `requestState`. A Task A2A é então transitada para `TASK_STATE_INPUT_REQUIRED` com a mensagem exata `alternativas: <id1>, <id2>`, e os dados de contexto são armazenados em `self._contextos_mrtr[task_id]`.
+
+2. **Retomada no MCP com ID JSON-RPC novo (Retomada):**
+   - No arquivo `agente/main.py` (linhas 536–548), dentro de `GerenciadorTasksA2A._processar_continuacao_mrtr`, ao receber uma mensagem de continuação com `escolha=<sala>` ou `escolha=recusar` para o `taskId` pausado, o agente recupera o contexto privado, monta `inputResponses` (`action: accept/decline`) e invoca `ClienteMCP.chamar_tool` gerando um **ID JSON-RPC novo** e ecoando o `requestState` intacto ao servidor MCP.
+
+Durante todo o ciclo, o `requestState` é estritamente opaco para o agente: nunca é lido, interpretado, manipulado ou exposto em respostas A2A (`SendMessage`/`GetTask`), cards ou artifacts.
 
 ---
 
 ## 3. Decisões técnicas
 
-**Proteção do `requestState`**
+**Proteção e reconstrução do pedido via `requestState`**
 - Utiliza `RequestStateSecurity` do SDK oficial (`mcp==2.3.0`) configurado no `MCPServer` em `servidor-mcp/main.py`.
 - Criptografia autenticada **AES-256-GCM** e derivação de chave **HKDF-SHA256** (info `"mcp-request-state-v1"`), conforme implementado pelo SDK em `mcp/server/_request_state.py`.
 - **TTL de 600 segundos** (`REQUEST_STATE_TTL_SECONDS = 600.0`).
-- **Binding criptográfico** por método (`tools/call`), nome da ferramenta (`reservar_sala`), digest SHA-256 canônico dos argumentos (`arg_digest`) e `audience`.
-- Qualquer adulteração no token `requestState` ou nos argumentos enviados no retry é rejeitada pelo `RequestStateBoundary` com erro JSON-RPC **`-32602`** (`Invalid params`, HTTP `400`).
+- **Binding criptográfico de argumentos:** conforme a especificação do MCP, no retry os argumentos originais são reconstruídos a partir dos parâmetros reenviados pelo cliente e validados contra o digest canônico SHA-256 (`arg_digest`) selado no AAD do AES-GCM. Caso qualquer argumento (`sala`, `inicio`, `fim`, `responsavel`) seja adulterado no retry, o `RequestStateBoundary` rejeita imediatamente com erro JSON-RPC **`-32602`** (`Invalid params`, HTTP `400`), impedindo divergências de negócio sem armazenar dados de sessão em memória no servidor.
+- Qualquer adulteração em bytes do token `requestState` ou expiração do TTL também é rejeitada com erro **`-32602`**.
 
 **Estrutura interna do estado**
 - O middleware `preservar_alternativas_mrtr` em `servidor-mcp/main.py` intercepta resultados `input_required` antes da selagem AEAD e armazena a lista validada de `alternativas` ofertadas dentro do dicionário de estado.
